@@ -932,6 +932,31 @@ void PrintFieldLayout(llvm::Type *Ty, DxilFieldAnnotation &annotation,
   }
 }
 
+// HLSL Change - print one line per bitfield packed inside an integer storage
+// field. The DxilFieldAnnotation of the storage field owns the list of
+// DxilFieldAnnotations describing each bitfield (name, component type and
+// bit width).
+void PrintBitFields(DxilFieldAnnotation &fieldAnnotation,
+                    DxilTypeSystem &typeSys, raw_string_ostream &OS,
+                    StringRef comment, unsigned offset, unsigned indent,
+                    unsigned offsetIndent) {
+  for (const DxilFieldAnnotation &bitField : fieldAnnotation.GetBitFields()) {
+    std::string NameTypeStr;
+    {
+      raw_string_ostream Stream(NameTypeStr);
+      Stream << bitField.GetCompType().GetHLSLName(typeSys.UseMinPrecision());
+      Stream << " " << bitField.GetFieldName();
+      Stream << " : " << bitField.GetBitFieldWidth();
+      Stream << ";";
+      Stream.flush();
+    }
+    (OS << comment).indent(indent);
+    OS << left_justify(NameTypeStr, offsetIndent);
+    OS << comment << " Offset:" << right_justify(std::to_string(offset), 5)
+       << "\n";
+  }
+}
+
 // null DataLayout => assume constant buffer layout
 void PrintStructLayout(StructType *ST, DxilTypeSystem &typeSys,
                        const DataLayout *DL, raw_string_ostream &OS,
@@ -960,6 +985,12 @@ void PrintStructLayout(StructType *ST, DxilTypeSystem &typeSys,
         fieldOffset = offset + fieldAnnotation.GetCBufferOffset();
       } else { // Normal data layout
         fieldOffset = offset + DL->getStructLayout(ST)->getElementOffset(i);
+      }
+
+      if (fieldAnnotation.HasBitFields()) {
+        PrintBitFields(fieldAnnotation, typeSys, OS, comment, fieldOffset,
+                       fieldIndent, offsetIndent - 4);
+        continue;
       }
 
       PrintFieldLayout(ST->getElementType(i), fieldAnnotation, typeSys, DL, OS,
